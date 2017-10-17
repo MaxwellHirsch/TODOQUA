@@ -17,6 +17,10 @@ $(function main() {
         var shouldInstall = (checkState.path == '/install');
         return shouldInstall
             ? installAsync(deps)
+                .then(() => {
+                    console.log('Install complete, now update app config with step 1');
+                    return updateAppConfigurationAsync(deps, 1, true)
+                })
             : true;
     });
 
@@ -43,9 +47,13 @@ $(function main() {
             startReact(deps);
         } else {
             authorizeAsync(deps)
+                .then(() => new Promise((resolve) => window.setTimeout(resolve, 3000)))
                 .then(() => updateAccountAsync(deps))
                 .then(() => updateAppConfigurationAsync(deps))
-                .then(() => startReact(deps));
+                .then(() => startReact(deps))
+                .catch((err) => {
+                    uninstallAsync(deps);
+                });
         }
     });
 });
@@ -115,7 +123,7 @@ function compileDependencies(client) {
                 channelVersion: '1.0.2',
                 orgId: 6163,
                 appToken: 'azq_apps',
-                configName: `${channelName}-${deps.userId}`
+                configName: `${channelName}:${deps.userId}`
             };
         })
 }
@@ -140,6 +148,7 @@ function checkStateAsync(deps) {
             token: '',
             origin: deps.origin,
             app_guid: deps.appGuid,
+            userId: deps.userId
         }
     };
     return deps.client.request(invokeMainFloQuery)
@@ -155,7 +164,8 @@ function installAsync(deps) {
             instanceName: deps.instanceName,
             instanceId: deps.instanceId,
             token: deps.token,
-            origin: deps.origin
+            origin: deps.origin,
+            userId: deps.userId
         }
     };
     return deps.client.request(invokeInstallFloQuery);
@@ -172,9 +182,10 @@ function updateAccountAsync(deps) {
             connectorName: deps.channelName,
             accountId: deps.accountId,
             connectorVersion: deps.channelVersion,
-            accountName: deps.accountName,
+            accountName: deps.configName,
             token: deps.token,
-            origin: deps.origin
+            origin: deps.origin,
+            useId: deps.userId
         }
     };
     return deps.client.request(invokeUpdateConfigFloQuery)
@@ -197,25 +208,41 @@ function authorizeAsync(deps) {
     });
 }
 
-function updateAppConfigurationAsync(deps) {
+function updateAppConfigurationAsync(deps, stepNumber, completed) {
     var invokeUpdateAppConfigFloQuery = {
         url: `https://api.azuqua.com/flo/282b0a132307c678927afcffc5a51d30/invoke`, // 04. Update Configuration
         cors: true,
         type: 'post',
         dataType: 'json',
         data: {
-            stepNumber: 4,
-            completed: true,
+            stepNumber,
+            completed,
             instanceId: deps.instanceId,
             token: deps.token,
-            origin: deps.origin
+            origin: deps.origin,
+            userId: deps.userId
         }
     };
-    return deps.client.request(invokeUpdateConfigFloQuery);
+    return deps.client.request(invokeUpdateAppConfigFloQuery);
+}
+
+function uninstallAsync(deps) {
+    var invokeUninstallFloQuery = {
+        url: `https://api.azuqua.com/flo/b5c856d940aa2fbc16be3cc145dab703/invoke`, // 06. Uninstall
+        cors: true,
+        type: 'post',
+        dataType: 'json',
+        data: {
+            instanceId: deps.instanceId,
+            token: deps.token,
+            origin: deps.origin,
+            userId: deps.userId
+        }
+    };
+    return deps.client.request(invokeUninstallFloQuery);
 }
 
 function startReact(deps) {
-    console.log(deps);
     ReactDOM.render(
         <MainApp {...deps} />,
         document.getElementById('container')

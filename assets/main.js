@@ -17,10 +17,6 @@ $(function main() {
         var shouldInstall = (checkState.path == '/install');
         return shouldInstall
             ? installAsync(deps)
-                .then(() => {
-                    console.log('Install complete, now update app config with step 1');
-                    return updateAppConfigurationAsync(deps, 1, true)
-                })
             : true;
     });
 
@@ -46,15 +42,16 @@ $(function main() {
         if (hasConfig) {
             startReact(deps);
         } else {
-            authorizeAsync(deps)
+            return authorizeAsync(deps)
                 .then(() => new Promise((resolve) => window.setTimeout(resolve, 3000)))
                 .then(() => updateAccountAsync(deps))
-                .then(() => updateAppConfigurationAsync(deps))
+                .then(() => updateAppConfigurationAsync(deps, 1, true))
                 .then(() => startReact(deps))
-                .catch((err) => {
-                    uninstallAsync(deps);
-                });
+                
         }
+    })
+    .catch((err) => {
+        uninstallAsync(deps);
     });
 });
 
@@ -185,7 +182,7 @@ function updateAccountAsync(deps) {
             accountName: deps.configName,
             token: deps.token,
             origin: deps.origin,
-            useId: deps.userId
+            userId: deps.userId
         }
     };
     return deps.client.request(invokeUpdateConfigFloQuery)

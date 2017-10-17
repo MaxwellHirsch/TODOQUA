@@ -27,8 +27,7 @@ $(function main() {
         return updateAccountAsync(deps)
             .then(() => true) // Has config
             .catch((err) => {
-                var statusCode = err.statusCode;
-                if (statusCode == 404) {
+                if (err.status == 404) {
                     return false;
                 } else {
                     throw err;

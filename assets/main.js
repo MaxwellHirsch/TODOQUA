@@ -47,12 +47,12 @@ $(function main() {
                 .then(() => updateAccountAsync(deps))
                 .then(() => updateAppConfigurationAsync(deps, 1, true))
                 .then(() => startReact(deps))
+                .catch((err) => {
+                    uninstallAsync(deps);
+                });
                 
         }
     })
-    .catch((err) => {
-        uninstallAsync(deps);
-    });
 });
 
 function compileDependencies(client) {

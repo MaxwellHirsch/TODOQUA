@@ -40,11 +40,9 @@ $(function main() {
         hasConfigPromise
     ]).spread((deps, hasConfig) => {
         if (hasConfig) {
-            updateAppConfigurationAsync(deps, 1, true)
-                .then(() => startReact(deps))
+            startReact(deps);
         } else {
             return authorizeAsync(deps)
-                .then(() => new Promise((resolve) => window.setTimeout(resolve, 3000)))
                 .then(() => updateAccountAsync(deps))
                 .then(() => updateAppConfigurationAsync(deps, 1, true))
                 .then(() => startReact(deps))
@@ -81,7 +79,7 @@ function compileDependencies(client) {
                 .then((userInfo) => {
                     return {
                         ...deps,
-                        userInfo
+                        userInfo: userInfo.user
                     };
                 });
         })
@@ -130,9 +128,12 @@ function compileDependencies(client) {
                 channelVersion: '1.0.2',
                 orgId: 6163,
                 appToken: 'azq_apps',
-                configName: `${channelName}:${deps.userId}`
+                configName: `${channelName}::${deps.userId}`
             };
         })
+        .tap((deps) => {
+            console.log(deps);
+        });
 }
 
 function getParameterByName(name, url) {
@@ -267,20 +268,163 @@ class MainApp extends React.Component {
     constructor(props, ctx) {
         super(props, ctx);
         
+
+        const { userId } = props;
+        const ticketId = _.get(props, 'ticketData.id');
+        const customFields = _.get(props, 'ticketData.custom_fields', []);
+        const customField = _.find(customFields, (obj) => (obj.id == userId));
+        const parentId = _.get(customField, 'value', '');
+
         this.state = {
             taskItems: [],
-
-            // ticketURL -> Send on every request (empty string initially)
-            // parentId -> send on every request (even if it's empty string)
+            parentId,
+            hasParent: !!parentId, // parentId -> send on every request (even if it's empty string)
+            isLoadingTasks: true,
+            ticketUrl: `${props.origin}/agent/tickets/${ticketId}`, // ticketURL -> Send on every request (empty string initially)
         }
+
+        this.onCheckTask = this.onCheckTask.bind(this);
+        this.onUpdateTaskTitle = _.debounce(this.onUpdateTaskTitle.bind(this), 500); // 0.5 second debounce
+        this.loadTaskItems = this.loadTaskItems.bind(this);
+        this.onCreateTask = this.onCreateTask.bind(this);
     }
 
-    onCheckTask() {
-        //TODO: make FLO call
+    componentDidMount() {
+        this.loadTaskItems();
     }
 
-    onUpdateTaskText() {
-        // TODO: make FLO call
+    loadTaskItems() {
+        const { client, userId } = this.props;
+
+        const invokeGetTaskItemsFloQuery = {
+            url: `https://api.azuqua.com/flo/bc20c39dd90c59ca6b0fed8b34debe54/invoke`, // FLO Router
+            cors: true,
+            type: 'post',
+            dataType: 'json',
+            data: {
+                action: 'get',
+                parentId: this.state.parentId,
+                userId
+            }
+        };
+        client.request(invokeGetTaskItemsFloQuery)
+            .then((taskItems) => {
+                console.log(taskItems);
+                this.setState({
+                    taskItems,
+                    isLoadingTasks: false
+                });
+            })
+            .catch((err) => {
+                console.log(err);
+                if (err.status == 404) {
+                    // Has no Tasks yet.
+                    this.setState({
+                        hasParent: false
+                    });
+                }
+
+                this.setState({
+                    isLoadingTasks: false
+                });
+            })
+    }
+
+    onCheckTask(taskIndex, newStatus) {
+       let newTaskItems = [
+            ...this.state.taskItems
+        ];
+        newTaskItems[taskIndex] = {
+            ...newTaskItems[taskIndex],
+            [status]: newStatus
+        };
+
+        this.setState({
+            taskItems: newTaskItems
+        });
+
+        const newTaskItem = newTaskItems[taskIndex];
+        const updateTaskBody = {
+            url: `https://api.azuqua.com/flo/bc20c39dd90c59ca6b0fed8b34debe54/invoke`, // FLO Router
+            cors: true,
+            type: 'post',
+            dataType: 'json',
+            data: {
+                action: 'update',
+                title: newTaskItem.title,
+                status: newTaskItem.status,
+                taskId: newTaskItem.id,
+            }
+        };
+        this.props.client.request(updateTaskBody);
+    }
+
+    onUpdateTaskTitle(taskIndex, newTaskTitle) {
+       let newTaskItems = [
+            ...this.state.taskItems
+        ];
+        newTaskItems[taskIndex] = {
+            ...newTaskItems[taskIndex],
+            [title]: newTaskTitle
+        };
+
+        this.setState({
+            taskItems: newTaskItems
+        });
+
+        const newTaskItem = newTaskItems[taskIndex];
+        const updateTaskBody = {
+            url: `https://api.azuqua.com/flo/bc20c39dd90c59ca6b0fed8b34debe54/invoke`, // FLO Router
+            cors: true,
+            type: 'post',
+            dataType: 'json',
+            data: {
+                action: 'update',
+                title: newTaskItem.title,
+                status: newTaskItem.status,
+                taskId: newTaskItem.id,
+            }
+        };
+        this.props.client.request(updateTaskBody);
+    }
+
+    onCreateTask(key, newTaskTitle) {
+       let newTaskItems = [
+            ...this.state.taskItems
+        ];
+        newTaskItems[taskIndex] = {
+            ...newTaskItems[taskIndex],
+            [key]: value
+        };
+
+        this.setState({
+            taskItems: newTaskItems
+        });
+
+        const newTaskItem = newTaskItems[taskIndex];
+        const addBelowId = _.get(newTaskItems, `[${taskIndex - 1}].id`, '');
+
+        const createTaskBody = {
+           url: `https://api.azuqua.com/flo/bc20c39dd90c59ca6b0fed8b34debe54/invoke`, // FLO Router
+           cors: true,
+           type: 'post',
+           dataType: 'json',
+           data: {
+            action: 'create',
+            title: newTaskItem.title,
+            parentId: this.state.parentId,
+            addbelowId: addBelowId,
+            ticketId: _.get(this.props, 'ticketData.id'),
+            ticketUrl: this.state.ticketUrl
+           }
+        };
+        this.props.client.request(createTaskBody)
+            .then((result) => {
+                console.log(result);
+                // This will return something like { output: { "Task ID": <new_task_id>, "URL": <new_task_url>, "Parent ID": <new_task_parent_id> } }
+                // go ahead and setState for parent ID (If we create the first task for an item, it will create a parent task as well)
+                // this FLO will always return the Parent ID, even if we already know it (and passed it in).
+            });
     }
         
     render() {
@@ -301,9 +445,11 @@ class MainApp extends React.Component {
                         return (
                             <TaskItem
                                 key={key}
-                                taskText={taskItemData.text}
-                                onCheckTask={this.onCheckTask.bind(this)}
-                                onUpdateTaskText={this.onUpdateTaskText.bind(this)}
+                                taskTitle={taskItemData.title}
+                                taskId={taskItemData.id}
+                                isChecked={(taskItemData.status == 'completed')}
+                                onCheckTask={this.onCheckTask}
+                                onUpdateTaskTitle={this.onUpdateTaskTitle}
                             />
                         )
                     })
@@ -312,41 +458,50 @@ class MainApp extends React.Component {
                 <TaskItem
                     isNewTask={true}
                     key={nextTaskItemKey}
-                    taskText=""
-                    onCheckTask={this.onCheckTask.bind(this)}
-                    onUpdateTaskText={this.onUpdateTaskText.bind(this)}
+                    taskTitle=""
+                    taskId={null}
+                    isChecked={false}
+                    onCheckTask={this.onCheckTask}
+                    onUpdateTaskTitle={this.onUpdateTaskTitle}
+                    onCreateTask={this.onCreateTask}
                 />
             </div>
         );
     }
 };
 
-class TaskItem extends React.Component{
+class TaskItem extends React.Component {
 
     constructor(props, ctx) {
         super(props, ctx);
 
         this.state = {
-            isChecked: props.isChecked,
-            taskText: props.taskText
+            taskTitle: props.taskTitle
         }
     }
 
-    updateTaskText(e) {
-        const newTaskText = e.target.value;
-        console.log(newTaskText);
+    handleTaskTitleUpdate(e) {
         this.setState({
-            taskText: newTaskText
+            taskTitle: e.target.value
         });
-        this.props.onUpdateTaskText();
     }
 
-    toggleTaskChecked() {
-        const prevIsChecked = this.state.isChecked;
-        this.setState({
-            isChecked: !prevIsChecked
-        });
-        this.props.onCheckTask();
+    updateTaskTitle(e) {
+        const { key, isNewTask, onCreateTask, onUpdateTaskTitle } = this.props;
+        const newTaskTitle = this.state.taskTitle;
+        if (isNewTask) {
+            onCreateTask(key, newTaskTitle);
+        } else {
+            onUpdateTaskTitle(key, newTaskTitle);
+        }
+    }
+
+    toggleTaskCompleted() {
+        const { isChecked, onCheckTask, key } = this.props;
+        const newStatus = isChecked
+            ? 'needsAction'
+            : 'completed';
+        onCheckTask(key, newStatus);
     }
 
     render() {
@@ -355,32 +510,15 @@ class TaskItem extends React.Component{
         return (
             <div className="row">
                 <div className={`col c-chk c-chk--nolabel ${className}`}>
-                    <input className="c-chk__input" id={`chk-${key}`} type="checkbox" value={this.state.isChecked}/>
-                    <label className="c-chk__label" dir="ltr" for={`chk-${key}`} onChange={this.toggleTaskChecked.bind(this)}></label>
+                    <input className="c-chk__input" id={`chk-${key}`} type="checkbox" value={this.props.isChecked} onChange={this.toggleTaskCompleted.bind(this)} disabled={this.props.isNewTask}/>
+                    <label className="c-chk__label" dir="ltr" for={`chk-${key}`} onChange={this.toggleTaskCompleted.bind(this)} disabled={this.props.isNewTask}></label>
                     <input
                         className="task-text"
-                        value={this.state.taskText}
-                        onChange={this.updateTaskText.bind(this)}    
+                        value={this.state.taskTitle}
+                        onChange={this.handleTaskTitleUpdate.bind(this)}
+                        onBlur={this.updateTaskTitle.bind(this)}   // To make things easier, only update when the user looses focus of the input  
                     />
                 </div>
-            </div>
-        );
-    }
-}
-
-class TodoEditor extends React.Component{
-    constructor(props, ctx) {
-        super(props, ctx);
-
-        this.state = {
-            
-        }
-    }
-
-    render() {
-        return (
-            <div>
-
             </div>
         );
     }

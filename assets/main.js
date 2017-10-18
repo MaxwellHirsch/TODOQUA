@@ -110,6 +110,15 @@ function compileDependencies(client) {
             };
         })
         .then((deps) => {
+            return client.get('ticket')
+                .then((data) => {
+                    return {
+                        ...deps,
+                        ticketData: data.ticket
+                    }
+                })
+        })
+        .then((deps) => {
             const subdomain = _.get(deps, 'zendeskContext.account.subdomain');
             const channelName = 'googletasks2_6163';
             return {

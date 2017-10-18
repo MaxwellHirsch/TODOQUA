@@ -40,7 +40,8 @@ $(function main() {
         hasConfigPromise
     ]).spread((deps, hasConfig) => {
         if (hasConfig) {
-            startReact(deps);
+            updateAppConfigurationAsync(deps, 1, true)
+                .then(() => startReact(deps))
         } else {
             return authorizeAsync(deps)
                 .then(() => new Promise((resolve) => window.setTimeout(resolve, 3000)))
